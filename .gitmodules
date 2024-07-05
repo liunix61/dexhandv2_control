@@ -1,0 +1,3 @@
+[submodule "sdk/dexhandv2_cpp_client"]
+	path = sdk/dexhandv2_cpp_client
+	url = git@github.com:iotdesignshop/dexhandv2_cpp_client.git
