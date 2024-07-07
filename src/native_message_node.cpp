@@ -9,6 +9,12 @@
 #include "dexhandv2_control/msg/firmware_version.hpp"
 #include "dexhandv2_control/msg/discovered_hands.hpp"
 #include "dexhandv2_control/msg/hardware_description.hpp"
+#include "dexhandv2_control/msg/servo_vars.hpp"
+#include "dexhandv2_control/msg/servo_vars_table.hpp"
+#include "dexhandv2_control/msg/servo_dynamics.hpp"
+#include "dexhandv2_control/msg/servo_dynamics_table.hpp"
+#include "dexhandv2_control/msg/servo_status.hpp"
+
 
 #include "dexhand_connect.hpp"
 
@@ -23,93 +29,149 @@ using namespace std;
 class FullServoStatusSubscriber : public IDexhandMessageSubscriber<ServoFullStatusMessage> {
     public:
 
-        FullServoStatusSubscriber(string deviceID) : deviceID(deviceID) {}
+        FullServoStatusSubscriber(string deviceID, rclcpp::Node* parent) : deviceID(deviceID), logger(parent->get_logger()) {
+            // Define QoS policy - best effort, keep last message, volatile
+            auto qos = rclcpp::QoS(rclcpp::KeepLast(1));
+            qos.best_effort();
+
+            ss_publisher = parent->create_publisher<dexhandv2_control::msg::ServoStatus>("dexhandv2/servo_status", qos);
+        }
         ~FullServoStatusSubscriber() = default;
 
         void messageReceived(const ServoFullStatusMessage& message) override {
-            cout << "Full Status for Device:" << deviceID << " Servo ID: " << (int)message.getServoID() << endl;
-            cout << "--------------------------------" << endl;
-            cout << "Status: " << (int)message.getStatus() << endl;
-            cout << "Position: " << message.getPosition() << endl;
-            cout << "Speed: " << message.getSpeed() << endl;
-            cout << "Load: " << message.getLoad() << endl;
-            cout << "Voltage: " << (int)message.getVoltage() << endl;
-            cout << "Temperature: " << (int)message.getTemperature() << endl;
-            cout << "--------------------------------" << endl << endl;
-        }
+            RCLCPP_DEBUG(logger, "Full status message received for device: %s", deviceID.c_str());
+            RCLCPP_DEBUG(logger, "Servo ID: %d", (int)message.getServoID());
+            RCLCPP_DEBUG(logger, "Status: %d", message.getStatus());
+            RCLCPP_DEBUG(logger, "Position: %d", message.getPosition());
+            RCLCPP_DEBUG(logger, "Speed: %d", message.getSpeed());
+            RCLCPP_DEBUG(logger, "Load: %d", message.getLoad());
+            RCLCPP_DEBUG(logger, "Voltage: %d", (int)message.getVoltage());
+            RCLCPP_DEBUG(logger, "Temperature: %d", (int)message.getTemperature());
 
-    private:
-        string deviceID;
-};
-
-class DynamicsSubscriber : public IDexhandMessageSubscriber<ServoDynamicsMessage> {
-    public:
-        DynamicsSubscriber(string deviceID) : deviceID(deviceID) {}
-        ~DynamicsSubscriber() = default;
-
-        void messageReceived(const ServoDynamicsMessage& message) override {
-            cout << "Dynamics message received for device:" << deviceID << endl;
-            cout << "Num servos: " << message.getNumServos() << endl;
-            cout << "ID:\tStatus\tPos\tSpd\tLoad" << endl;
-            cout << "------------------------------------" << endl;
-
-            for (const auto& status : message.getServoStatus()){
-                cout << (int)status.first << "\t";
-                cout << (int)status.second.getStatus() << "\t";
-                cout << status.second.getPosition() << "\t";
-                cout << status.second.getSpeed() << "\t";
-                cout << status.second.getLoad() << endl;
-            }
-            cout << "------------------------------------" << endl << endl;
-        }
-    private:
-        string deviceID;
-};
-
-class ServoVarsSubscriber : public IDexhandMessageSubscriber<ServoVarsListMessage> {
-    public:
-        ServoVarsSubscriber(string deviceID) : deviceID(deviceID) {}
-        ~ServoVarsSubscriber() = default;
-
-        void messageReceived(const ServoVarsListMessage& message) override {
-            cout << "Servo Vars message received for device:" << deviceID << endl;
-            cout << "Num servos: " << message.getNumServos() << endl;
-            cout << "ID\tHWMin\tHWMax\tSWMin\tSWMax\tHome\tMaxLoad\tMaxTemp" << endl;
-            cout << "------------------------------------------------------------------" << endl;
-
-
-            // Iterate over each servo and print out the vars
-            for (const auto& vars : message.getServoVars()){
-                cout << (int)vars.first << "\t";
-                cout << vars.second.getHWMinPosition() << "\t";
-                cout << vars.second.getHWMaxPosition() << "\t";
-                cout << vars.second.getSWMinPosition() << "\t";
-                cout << vars.second.getSWMaxPosition() << "\t";
-                cout << vars.second.getHomePosition() << "\t";
-                cout << (int)vars.second.getMaxLoadPct() << "\t";
-                cout << (int)vars.second.getMaxTemp() << endl;
-            }
-            
-            cout << "------------------------------------" << endl << endl;
-        }
-    private:
-        string deviceID;
-};
-
-class FirmwareVersionSubscriber : public IDexhandMessageSubscriber<FirmwareVersionMessage> {
-    public:
-        FirmwareVersionSubscriber(string deviceID, rclcpp::Logger log) : deviceID(deviceID), logger(log) {}
-        ~FirmwareVersionSubscriber() = default;
-
-        void messageReceived(const FirmwareVersionMessage& message) override {
-            RCLCPP_INFO(logger, "Firmware version received for device: %s", deviceID.c_str());
-            RCLCPP_INFO(logger, "Firmware: %s", message.getVersionName().c_str());
-            RCLCPP_INFO(logger, "Firmware version: %d.%d", (int)message.getMajorVersion(), (int)message.getMinorVersion());
+            dexhandv2_control::msg::ServoStatus ss_msg;
+            ss_msg.id = deviceID;
+            ss_msg.servo_id = message.getServoID();
+            ss_msg.status = message.getStatus();
+            ss_msg.position = message.getPosition();
+            ss_msg.speed = message.getSpeed();
+            ss_msg.load = message.getLoad();
+            ss_msg.voltage = message.getVoltage();
+            ss_msg.temp = message.getTemperature();
+            ss_publisher->publish(ss_msg);
         }
 
     private:
         string deviceID;
         rclcpp::Logger logger;
+        rclcpp::Publisher<dexhandv2_control::msg::ServoStatus>::SharedPtr ss_publisher;
+};
+
+class DynamicsSubscriber : public IDexhandMessageSubscriber<ServoDynamicsMessage> {
+    public:
+        DynamicsSubscriber(string deviceID, rclcpp::Node* parent) : deviceID(deviceID), logger(parent->get_logger()){
+            // Define QoS policy - best effort, keep last message, volatile
+            auto qos = rclcpp::QoS(rclcpp::KeepLast(1));
+            qos.best_effort();
+
+            sd_publisher = parent->create_publisher<dexhandv2_control::msg::ServoDynamicsTable>("dexhandv2/servo_dynamics", qos);
+        }
+        ~DynamicsSubscriber() = default;
+
+        void messageReceived(const ServoDynamicsMessage& message) override {
+            RCLCPP_DEBUG(logger, "Dynamics message received for device: %s", deviceID.c_str());
+            RCLCPP_DEBUG(logger, "Num servos: %ld", message.getNumServos());
+            RCLCPP_DEBUG(logger, "ID\tStatus\tPos\tSpd\tLoad");
+            RCLCPP_DEBUG(logger, "------------------------------------");
+            
+
+            dexhandv2_control::msg::ServoDynamicsTable sd_msg;
+            sd_msg.id = deviceID;
+
+            for (const auto& status : message.getServoStatus()){
+                RCLCPP_DEBUG(logger, "%d\t%d\t%d\t%d\t%d", (int)status.first, status.second.getStatus(), status.second.getPosition(), status.second.getSpeed(), status.second.getLoad());
+                
+                dexhandv2_control::msg::ServoDynamics sd;
+                sd.servo_id = status.first;
+                sd.status = status.second.getStatus();
+                sd.position = status.second.getPosition();
+                sd.speed = status.second.getSpeed();
+                sd.load = status.second.getLoad();
+                sd_msg.servo_table.push_back(sd);
+            }
+            
+            sd_publisher->publish(sd_msg);
+        }
+    private:
+        string deviceID;
+        rclcpp::Logger logger;
+        rclcpp::Publisher<dexhandv2_control::msg::ServoDynamicsTable>::SharedPtr sd_publisher;
+};
+
+class ServoVarsSubscriber : public IDexhandMessageSubscriber<ServoVarsListMessage> {
+    public:
+        ServoVarsSubscriber(string deviceID, rclcpp::Node* parent) : deviceID(deviceID), logger(parent->get_logger()) {
+            sv_publisher = parent->create_publisher<dexhandv2_control::msg::ServoVarsTable>("dexhandv2/servo_vars", rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local());
+        }
+        ~ServoVarsSubscriber() = default;
+
+        void messageReceived(const ServoVarsListMessage& message) override {
+            RCLCPP_INFO(logger, "Servo Vars message received for device: %s", deviceID.c_str());
+            RCLCPP_INFO(logger, "Num servos: %ld", message.getNumServos());
+            RCLCPP_INFO(logger, "ID\tHWMin\tHWMax\tSWMin\tSWMax\tHome\tMaxLoad\tMaxTemp");
+            RCLCPP_INFO(logger, "------------------------------------------------------------------");
+            
+            dexhandv2_control::msg::ServoVarsTable sv_msg;
+            sv_msg.id = deviceID;
+
+            
+            // Iterate over each servo and print out the vars
+            for (const auto& vars : message.getServoVars()){
+                RCLCPP_INFO(logger, "%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d", (int)vars.first, vars.second.getHWMinPosition(), vars.second.getHWMaxPosition(), vars.second.getSWMinPosition(), vars.second.getSWMaxPosition(), vars.second.getHomePosition(), (int)vars.second.getMaxLoadPct(), (int)vars.second.getMaxTemp());
+                
+                dexhandv2_control::msg::ServoVars sv;
+                sv.servo_id = vars.first;
+                sv.hw_min = vars.second.getHWMinPosition();
+                sv.hw_max = vars.second.getHWMaxPosition();
+                sv.sw_min = vars.second.getSWMinPosition();
+                sv.sw_max = vars.second.getSWMaxPosition();
+                sv.home = vars.second.getHomePosition();
+                sv.max_load_pct = vars.second.getMaxLoadPct();
+                sv.max_temp = vars.second.getMaxTemp();
+                sv_msg.servo_table.push_back(sv);
+            }
+            
+            sv_publisher->publish(sv_msg);
+        }
+    private:
+        string deviceID;
+        rclcpp::Logger logger;
+        rclcpp::Publisher<dexhandv2_control::msg::ServoVarsTable>::SharedPtr sv_publisher;
+};
+
+class FirmwareVersionSubscriber : public IDexhandMessageSubscriber<FirmwareVersionMessage> {
+    public:
+        FirmwareVersionSubscriber(string deviceID, rclcpp::Node* parent) : deviceID(deviceID), logger(parent->get_logger()) {
+            fw_publisher = parent->create_publisher<dexhandv2_control::msg::FirmwareVersion>("dexhandv2/firmware_version", rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local());
+        }
+        ~FirmwareVersionSubscriber() = default;
+
+        void messageReceived(const FirmwareVersionMessage& message) override {
+            RCLCPP_INFO(logger, "Firmware version received for device: %s", deviceID.c_str());
+            RCLCPP_INFO(logger, "Firmware version name: %s", message.getVersionName().c_str());
+            RCLCPP_INFO(logger, "Firmware version: %d.%d", (int)message.getMajorVersion(), (int)message.getMinorVersion());
+
+            dexhandv2_control::msg::FirmwareVersion fw_msg;
+            fw_msg.id = deviceID;
+            fw_msg.version_name = message.getVersionName();
+            fw_msg.major = message.getMajorVersion();
+            fw_msg.minor = message.getMinorVersion();
+            fw_publisher->publish(fw_msg);
+        }
+
+    private:
+        string deviceID;
+        rclcpp::Logger logger;
+        rclcpp::Publisher<dexhandv2_control::msg::FirmwareVersion>::SharedPtr fw_publisher;
 };
 
 
@@ -119,8 +181,7 @@ class FirmwareVersionSubscriber : public IDexhandMessageSubscriber<FirmwareVersi
 class DexHandPublisher : public rclcpp::Node
 {
   public:
-    DexHandPublisher()
-    : Node("DexHand_publisher"), count_(0)
+    DexHandPublisher(): Node("dexhand_publisher")
     {
         // Create a publisher for discovered hands
         auto qos_profile = rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local();
@@ -142,7 +203,7 @@ class DexHandPublisher : public rclcpp::Node
     class HandInstance {
 
         public:
-            HandInstance(string deviceID, rclcpp::Node* parent) : hand(), fullStatus(deviceID), dynamics(deviceID), servoVars(deviceID), firmware(deviceID,parent->get_logger()) {
+            HandInstance(string deviceID, rclcpp::Node* parent) : hand(), fullStatus(deviceID, parent), dynamics(deviceID, parent), servoVars(deviceID, parent), firmware(deviceID,parent) {
                 hand.subscribe(&fullStatus);
                 hand.subscribe(&dynamics);
                 hand.subscribe(&servoVars);
@@ -186,8 +247,7 @@ class DexHandPublisher : public rclcpp::Node
                     hands.push_back(std::make_shared<HandInstance>(device.serial, this));
                     HandInstance* hi = hands.back().get();
                     hi->getHand().openSerial(device.port);
-                    hi->getHand().resetHand();
-
+                    
                     // Add it to the discovered hands message
                     dexhandv2_control::msg::HardwareDescription hd;
                     hd.manufacturer = device.manufacturer;
@@ -228,19 +288,11 @@ class DexHandPublisher : public rclcpp::Node
         for (auto& hand : hands) {
             hand->getHand().update();
         }
-        
-      //auto message = std_msgs::msg::String();
-      //message.data = "Hello, world! " + std::to_string(count_++);
-      //RCLCPP_INFO(this->get_logger(), "Publishing: '%s'", message.data.c_str());
-      //publisher_->publish(message);
     }
 
     std::vector<shared_ptr<HandInstance>> hands;
-    
     rclcpp::TimerBase::SharedPtr timer_;
     rclcpp::Publisher<dexhandv2_control::msg::DiscoveredHands>::SharedPtr dh_publisher;
-
-    size_t count_;
 };
 
 int main(int argc, char * argv[])

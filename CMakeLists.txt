@@ -34,6 +34,11 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/FirmwareVersion.msg"
   "msg/HardwareDescription.msg"
   "msg/DiscoveredHands.msg"
+  "msg/ServoVars.msg"
+  "msg/ServoVarsTable.msg"
+  "msg/ServoDynamics.msg"
+  "msg/ServoStatus.msg"
+  "msg/ServoDynamicsTable.msg"
   DEPENDENCIES std_msgs
 )
 
