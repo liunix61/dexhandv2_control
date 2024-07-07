@@ -14,6 +14,7 @@
 #include "dexhandv2_control/msg/servo_dynamics.hpp"
 #include "dexhandv2_control/msg/servo_dynamics_table.hpp"
 #include "dexhandv2_control/msg/servo_status.hpp"
+#include "dexhandv2_control/srv/reset.hpp"
 
 
 #include "dexhand_connect.hpp"
@@ -183,6 +184,11 @@ class DexHandPublisher : public rclcpp::Node
   public:
     DexHandPublisher(): Node("dexhand_publisher")
     {
+        // Create service for resetting the hand
+        reset_service = this->create_service<dexhandv2_control::srv::Reset>(
+            "dexhandv2/reset", 
+            std::bind(&DexHandPublisher::reset_callback, this, std::placeholders::_1, std::placeholders::_2));
+
         // Create a publisher for discovered hands
         auto qos_profile = rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local();
         dh_publisher = this->create_publisher<dexhandv2_control::msg::DiscoveredHands>("dexhandv2/discovered_hands", qos_profile);
@@ -200,10 +206,25 @@ class DexHandPublisher : public rclcpp::Node
 
   private:
 
+    void reset_callback(const std::shared_ptr<dexhandv2_control::srv::Reset::Request> request,
+                        std::shared_ptr<dexhandv2_control::srv::Reset::Response> response)
+    {
+        response->success = false;
+
+        for (auto& hand : hands) {
+            if (request->id == "all" || request->id == hand->getID()) {
+                RCLCPP_INFO(this->get_logger(), "Resetting hand device %s", hand->getID().c_str());
+                hand->getHand().resetHand();
+                response->success = true;
+            }
+        }
+        
+    }
+
     class HandInstance {
 
         public:
-            HandInstance(string deviceID, rclcpp::Node* parent) : hand(), fullStatus(deviceID, parent), dynamics(deviceID, parent), servoVars(deviceID, parent), firmware(deviceID,parent) {
+            HandInstance(string deviceID, rclcpp::Node* parent) : hand(), id(deviceID), fullStatus(deviceID, parent), dynamics(deviceID, parent), servoVars(deviceID, parent), firmware(deviceID,parent) {
                 hand.subscribe(&fullStatus);
                 hand.subscribe(&dynamics);
                 hand.subscribe(&servoVars);
@@ -218,10 +239,12 @@ class DexHandPublisher : public rclcpp::Node
             }
 
             inline DexhandConnect& getHand() { return hand; }
+            inline string getID() { return id; }
 
         private:
 
             DexhandConnect hand;
+            string id;
             FullServoStatusSubscriber fullStatus;
             DynamicsSubscriber dynamics;
             ServoVarsSubscriber servoVars;
@@ -293,6 +316,9 @@ class DexHandPublisher : public rclcpp::Node
     std::vector<shared_ptr<HandInstance>> hands;
     rclcpp::TimerBase::SharedPtr timer_;
     rclcpp::Publisher<dexhandv2_control::msg::DiscoveredHands>::SharedPtr dh_publisher;
+
+    rclcpp::Service<dexhandv2_control::srv::Reset>::SharedPtr reset_service;
+
 };
 
 int main(int argc, char * argv[])
