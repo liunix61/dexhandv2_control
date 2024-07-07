@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>dexhandv2_ros2_control</name>
+  <name>dexhandv2_control</name>
   <version>0.0.1</version>
   <description>ROS 2 Controller for DexHandV2 Hardware</description>
   <maintainer email="trent@iotdesignshop.com">tshumay</maintainer>
@@ -13,6 +13,13 @@
   <build_depend>protobuf-compiler</build_depend>
   <build_depend>libprotobuf-dev</build_depend>
   <build_depend>pkg-config</build_depend>
+
+  <depend>rclcpp</depend>
+  <depend>std_msgs</depend>
+
+  <buildtool_depend>rosidl_default_generators</buildtool_depend>
+  <exec_depend>rosidl_default_runtime</exec_depend>
+  <member_of_group>rosidl_interface_packages</member_of_group>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

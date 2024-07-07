@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(dexhandv2_ros2_control)
+project(dexhandv2_control)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
@@ -12,6 +12,7 @@ find_package(ament_cmake REQUIRED)
 # further dependencies manually.
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
 
 # Set the path to the Dexhand Connect C++ SDK
 set(DC_SDK_DIR ${CMAKE_CURRENT_SOURCE_DIR}/sdk/dexhandv2_cpp_client)
@@ -20,7 +21,33 @@ set(DC_SDK_DIR ${CMAKE_CURRENT_SOURCE_DIR}/sdk/dexhandv2_cpp_client)
 add_subdirectory(${DC_SDK_DIR})
 
 # Add the include directories
-include_directories(${DC_SDK_DIR}/include)
+include_directories(
+  ${DC_SDK_DIR}/dexhand_connect/include
+  include
+  ${ament_cmake_INCLUDE_DIRS}
+  ${rclcpp_INCLUDE_DIRS}
+  ${CMAKE_CURRENT_BINARY_DIR}/rosidl_generator_cpp
+)
+
+# Message generation
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "msg/FirmwareVersion.msg"
+  "msg/HardwareDescription.msg"
+  "msg/DiscoveredHands.msg"
+  DEPENDENCIES std_msgs
+)
+
+# Native message node
+add_executable(native_messaging src/native_message_node.cpp)
+ament_target_dependencies(native_messaging rclcpp std_msgs)
+target_link_libraries(native_messaging dexhand_connect)
+
+
+# Install
+install(TARGETS
+  native_messaging
+  DESTINATION lib/${PROJECT_NAME}
+)
 
 
 if(BUILD_TESTING)

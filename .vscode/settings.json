@@ -1,0 +1,5 @@
+{
+    "ros.distro": "humble",
+    "ros.rosSetupScript": "/opt/ros/humble/install/setup.bash",
+    "ros.isolateEnvironment": "false"
+}
