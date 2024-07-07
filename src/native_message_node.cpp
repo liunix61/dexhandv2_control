@@ -122,10 +122,14 @@ class DexHandPublisher : public rclcpp::Node
     DexHandPublisher()
     : Node("DexHand_publisher"), count_(0)
     {
+        // Create a publisher for discovered hands
+        auto qos_profile = rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local();
+        dh_publisher = this->create_publisher<dexhandv2_control::msg::DiscoveredHands>("dexhandv2/discovered_hands", qos_profile);
+
         // Set up the Dexhand devices
         enumerate_devices();
-        
-        publisher_ = this->create_publisher<std_msgs::msg::String>("topic", 10);
+
+        // Schedule timer for updating hand devices
         timer_ = this->create_wall_timer(10ms, std::bind(&DexHandPublisher::timer_callback, this));
     }
 
@@ -169,13 +173,13 @@ class DexHandPublisher : public rclcpp::Node
         vector<DexhandConnect::DexhandUSBDevice> devices = hand.enumerateDevices();
         if (devices.size() > 0){
             RCLCPP_INFO(this->get_logger(), "Found %ld Dexhand devices", (devices.size()));
+
+            // Construct a message to publish the discovered hands
+            dexhandv2_control::msg::DiscoveredHands discoHands;
             
             for (auto& device : devices) {
-                RCLCPP_INFO(this->get_logger(), "Manufacturer: %s Product: %s Serial: %s", device.  manufacturer.c_str(), device.product.c_str(), device.serial.c_str());
-            }
-
-            for (auto& device : devices) {
                 if (hand.openSerial(device.port)) {
+                    RCLCPP_INFO(this->get_logger(), "Manufacturer: %s Product: %s Serial: %s", device.  manufacturer.c_str(), device.product.c_str(), device.serial.c_str());
                     RCLCPP_INFO(this->get_logger(), "Opened serial port %s for device %s", device.port.c_str(), device.serial.c_str());
 
                     // Create a new hand instance and open the serial port
@@ -183,9 +187,25 @@ class DexHandPublisher : public rclcpp::Node
                     HandInstance* hi = hands.back().get();
                     hi->getHand().openSerial(device.port);
                     hi->getHand().resetHand();
+
+                    // Add it to the discovered hands message
+                    dexhandv2_control::msg::HardwareDescription hd;
+                    hd.manufacturer = device.manufacturer;
+                    hd.port = device.port;
+                    hd.product = device.product;
+                    hd.id = device.serial;
+                    discoHands.hands.push_back(hd);
                     
                 }
+                else {
+                    RCLCPP_ERROR(this->get_logger(), "Failed to open serial port %s for device %s", device.port.c_str(), device.serial.c_str());
+                }
             }
+
+            // Publish the discovered hands message as a latched message
+            dh_publisher->publish(discoHands);
+
+
         }
         else {
             RCLCPP_ERROR(this->get_logger(), "No Dexhand devices found");
@@ -218,7 +238,8 @@ class DexHandPublisher : public rclcpp::Node
     std::vector<shared_ptr<HandInstance>> hands;
     
     rclcpp::TimerBase::SharedPtr timer_;
-    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr publisher_;
+    rclcpp::Publisher<dexhandv2_control::msg::DiscoveredHands>::SharedPtr dh_publisher;
+
     size_t count_;
 };
 

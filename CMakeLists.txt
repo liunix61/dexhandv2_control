@@ -37,10 +37,15 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   DEPENDENCIES std_msgs
 )
 
+# Get the message type support target
+rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME} "rosidl_typesupport_cpp")
+
 # Native message node
 add_executable(native_messaging src/native_message_node.cpp)
 ament_target_dependencies(native_messaging rclcpp std_msgs)
-target_link_libraries(native_messaging dexhand_connect)
+target_link_libraries(native_messaging dexhand_connect ${cpp_typesupport_target})
+
+
 
 
 # Install
