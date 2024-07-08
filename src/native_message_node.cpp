@@ -14,7 +14,11 @@
 #include "dexhandv2_control/msg/servo_dynamics.hpp"
 #include "dexhandv2_control/msg/servo_dynamics_table.hpp"
 #include "dexhandv2_control/msg/servo_status.hpp"
+#include "dexhandv2_control/msg/servo_target.hpp"
+#include "dexhandv2_control/msg/servo_targets_table.hpp"
+
 #include "dexhandv2_control/srv/reset.hpp"
+
 
 
 #include "dexhand_connect.hpp"
@@ -179,28 +183,34 @@ class FirmwareVersionSubscriber : public IDexhandMessageSubscriber<FirmwareVersi
 
 
 /// @brief Main class for the node to poll hand events and publish to ROS2 messages
-class DexHandPublisher : public rclcpp::Node
+class DexHandNode : public rclcpp::Node
 {
   public:
-    DexHandPublisher(): Node("dexhand_publisher")
+    DexHandNode(): Node("dexhandv2_control")
     {
         // Create service for resetting the hand
         reset_service = this->create_service<dexhandv2_control::srv::Reset>(
             "dexhandv2/reset", 
-            std::bind(&DexHandPublisher::reset_callback, this, std::placeholders::_1, std::placeholders::_2));
+            std::bind(&DexHandNode::reset_callback, this, std::placeholders::_1, std::placeholders::_2));
 
         // Create a publisher for discovered hands
         auto qos_profile = rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local();
         dh_publisher = this->create_publisher<dexhandv2_control::msg::DiscoveredHands>("dexhandv2/discovered_hands", qos_profile);
 
+        // Create subscriber for servo position messages
+        st_subscriber = this->create_subscription<dexhandv2_control::msg::ServoTargetsTable>(
+            "dexhandv2/servo_targets", rclcpp::QoS(rclcpp::KeepLast(1)).reliable().durability_volatile(),
+            std::bind(&DexHandNode::servo_targets_callback, this, std::placeholders::_1));
+    
+
         // Set up the Dexhand devices
         enumerate_devices();
 
         // Schedule timer for updating hand devices
-        timer_ = this->create_wall_timer(10ms, std::bind(&DexHandPublisher::timer_callback, this));
+        timer_ = this->create_wall_timer(10ms, std::bind(&DexHandNode::timer_callback, this));
     }
 
-    ~DexHandPublisher() {
+    ~DexHandNode() {
         close_devices();
     }
 
@@ -219,6 +229,19 @@ class DexHandPublisher : public rclcpp::Node
             }
         }
         
+    }
+
+    void servo_targets_callback(const dexhandv2_control::msg::ServoTargetsTable::SharedPtr msg) {
+        for (auto& hand : hands) {
+            if (msg->id == hand->getID()) {
+                SetServoPositionsCommand cmd;
+                for (const auto& target : msg->servo_table) {
+                    RCLCPP_DEBUG(this->get_logger(), "Setting servo %d to position %d", target.servo_id, target.position);
+                    cmd.setServoPosition(target.servo_id, target.position);
+                }
+                hand->getHand().sendCommand(cmd);
+            }
+        }
     }
 
     class HandInstance {
@@ -315,7 +338,9 @@ class DexHandPublisher : public rclcpp::Node
 
     std::vector<shared_ptr<HandInstance>> hands;
     rclcpp::TimerBase::SharedPtr timer_;
+
     rclcpp::Publisher<dexhandv2_control::msg::DiscoveredHands>::SharedPtr dh_publisher;
+    rclcpp::Subscription<dexhandv2_control::msg::ServoTargetsTable>::SharedPtr st_subscriber;
 
     rclcpp::Service<dexhandv2_control::srv::Reset>::SharedPtr reset_service;
 
@@ -325,7 +350,7 @@ int main(int argc, char * argv[])
 {
 
   rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<DexHandPublisher>());
+  rclcpp::spin(std::make_shared<DexHandNode>());
   rclcpp::shutdown();
   return 0;
 }
