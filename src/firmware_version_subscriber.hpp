@@ -1,3 +1,6 @@
+/// @file firmware_version_subscriber.hpp - Subscriber for DexHand firmware version messages
+/// @copyright 2024 IoT Design Shop Inc. All rights reserved.
+
 #pragma once
 
 #include <string>
@@ -7,6 +10,7 @@
 #include "dexhandv2_control/msg/firmware_version.hpp"
 
 
+/// @brief Subscriber for DexHand firmware version messages. Receives firmware version messages from DexHand and publishes them as ROS 2 messages.
 class FirmwareVersionSubscriber : public dexhand_connect::IDexhandMessageSubscriber<dexhand_connect::FirmwareVersionMessage> {
     public:
         FirmwareVersionSubscriber(std::string deviceID, rclcpp::Node* parent) : deviceID(deviceID), logger(parent->get_logger()) {

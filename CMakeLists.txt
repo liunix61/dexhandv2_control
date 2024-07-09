@@ -56,11 +56,19 @@ ament_target_dependencies(native_messaging rclcpp std_msgs)
 target_link_libraries(native_messaging dexhand_connect ${cpp_typesupport_target})
 
 
+# Native message node
+add_executable(high_level_control 
+  src/high_level_node.cpp
+  src/base_node.cpp)
+ament_target_dependencies(high_level_control rclcpp std_msgs)
+target_link_libraries(high_level_control dexhand_connect ${cpp_typesupport_target})
+
 
 
 # Install
 install(TARGETS
   native_messaging
+  high_level_control
   DESTINATION lib/${PROJECT_NAME}
 )
 

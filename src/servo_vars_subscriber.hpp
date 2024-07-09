@@ -1,3 +1,6 @@
+/// @file servo_vars_subscriber.hpp - Subscriber for DexHand servo vars messages
+/// @copyright 2024 IoT Design Shop Inc. All rights reserved.
+
 #pragma once
 
 #include <string>
@@ -9,6 +12,8 @@
 #include "dexhandv2_control/msg/servo_vars_table.hpp"
 
 
+/// @brief Subscriber for DexHand servo vars messages, which describe all the servos and their ranges. 
+/// This class receives servo vars messages from DexHand and publishes them as ROS 2 messages.
 class ServoVarsSubscriber : public dexhand_connect::IDexhandMessageSubscriber<dexhand_connect::ServoVarsListMessage> {
     public:
         ServoVarsSubscriber(std::string deviceID, rclcpp::Node* parent) : deviceID(deviceID), logger(parent->get_logger()) {

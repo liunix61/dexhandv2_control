@@ -5,8 +5,7 @@
 #include <vector>
 
 #include "rclcpp/rclcpp.hpp"
-#include "dexhandv2_control/msg/discovered_hands.hpp"
-#include "dexhandv2_control/msg/hardware_description.hpp"
+
 #include "dexhandv2_control/msg/servo_dynamics.hpp"
 #include "dexhandv2_control/msg/servo_dynamics_table.hpp"
 #include "dexhandv2_control/msg/servo_status.hpp"
@@ -122,6 +121,11 @@ class DexHandNode : public DexHandBase
         st_subscriber = this->create_subscription<dexhandv2_control::msg::ServoTargetsTable>(
             "dexhandv2/servo_targets", rclcpp::QoS(rclcpp::KeepLast(1)).reliable().durability_volatile(),
             std::bind(&DexHandNode::servo_targets_callback, this, std::placeholders::_1));
+
+        // Enumerate all the devices and create hand instances
+        this->enumerate_devices([](string deviceID, rclcpp::Node* parent) -> std::shared_ptr<HandInstance> {
+            return std::make_shared<NMHandInstance>(deviceID, parent);
+        });
 
         // Schedule timer for updating hand devices
         timer_ = this->create_wall_timer(10ms, std::bind(&DexHandNode::timer_callback, this));

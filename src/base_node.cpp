@@ -1,3 +1,6 @@
+/// @file base_node.cpp - Base class for DexHand ROS 2 nodes
+/// @copyright 2024 IoT Design Shop Inc. All rights reserved.
+
 #include "base_node.hpp"
 
 using namespace std::chrono_literals;
@@ -14,8 +17,6 @@ DexHandBase::DexHandBase(const std::string& node_name) : Node(node_name) {
     auto qos_profile = rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local();
     dh_publisher = this->create_publisher<dexhandv2_control::msg::DiscoveredHands>("dexhandv2/discovered_hands", qos_profile);
 
-    // Set up the Dexhand devices
-    enumerate_devices();    
 }
 
 DexHandBase::~DexHandBase() {
@@ -39,7 +40,7 @@ void DexHandBase::reset_callback(const std::shared_ptr<dexhandv2_control::srv::R
 }
 
 
-void DexHandBase::enumerate_devices() {
+void DexHandBase::enumerate_devices(HandInstanceFactory factory) {
     DexhandConnect hand;
     vector<DexhandConnect::DexhandUSBDevice> devices = hand.enumerateDevices();
     if (devices.size() > 0){
@@ -54,8 +55,8 @@ void DexHandBase::enumerate_devices() {
                 RCLCPP_INFO(this->get_logger(), "Opened serial port %s for device %s", device.port.c_str(), device.serial.c_str());
 
                 // Create a new hand instance and open the serial port
-                hands.push_back(std::make_shared<HandInstance>(device.serial, this));
-                HandInstance* hi = hands.back().get();
+                auto hi = factory(device.serial, this);
+                hands.push_back(hi);
                 hi->getHand().openSerial(device.port);
                 
                 // Add it to the discovered hands message
