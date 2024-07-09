@@ -5,12 +5,8 @@
 #include <vector>
 
 #include "rclcpp/rclcpp.hpp"
-#include "std_msgs/msg/string.hpp"
-#include "dexhandv2_control/msg/firmware_version.hpp"
 #include "dexhandv2_control/msg/discovered_hands.hpp"
 #include "dexhandv2_control/msg/hardware_description.hpp"
-#include "dexhandv2_control/msg/servo_vars.hpp"
-#include "dexhandv2_control/msg/servo_vars_table.hpp"
 #include "dexhandv2_control/msg/servo_dynamics.hpp"
 #include "dexhandv2_control/msg/servo_dynamics_table.hpp"
 #include "dexhandv2_control/msg/servo_status.hpp"
@@ -19,9 +15,10 @@
 
 #include "dexhandv2_control/srv/reset.hpp"
 
-
-
 #include "dexhand_connect.hpp"
+
+#include "firmware_version_subscriber.hpp"
+#include "servo_vars_subscriber.hpp"
 
 using namespace std::chrono_literals;
 
@@ -112,72 +109,8 @@ class DynamicsSubscriber : public IDexhandMessageSubscriber<ServoDynamicsMessage
         rclcpp::Publisher<dexhandv2_control::msg::ServoDynamicsTable>::SharedPtr sd_publisher;
 };
 
-class ServoVarsSubscriber : public IDexhandMessageSubscriber<ServoVarsListMessage> {
-    public:
-        ServoVarsSubscriber(string deviceID, rclcpp::Node* parent) : deviceID(deviceID), logger(parent->get_logger()) {
-            sv_publisher = parent->create_publisher<dexhandv2_control::msg::ServoVarsTable>("dexhandv2/servo_vars", rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local());
-        }
-        ~ServoVarsSubscriber() = default;
 
-        void messageReceived(const ServoVarsListMessage& message) override {
-            RCLCPP_INFO(logger, "Servo Vars message received for device: %s", deviceID.c_str());
-            RCLCPP_INFO(logger, "Num servos: %ld", message.getNumServos());
-            RCLCPP_INFO(logger, "ID\tHWMin\tHWMax\tSWMin\tSWMax\tHome\tMaxLoad\tMaxTemp");
-            RCLCPP_INFO(logger, "------------------------------------------------------------------");
-            
-            dexhandv2_control::msg::ServoVarsTable sv_msg;
-            sv_msg.id = deviceID;
 
-            
-            // Iterate over each servo and print out the vars
-            for (const auto& vars : message.getServoVars()){
-                RCLCPP_INFO(logger, "%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d", (int)vars.first, vars.second.getHWMinPosition(), vars.second.getHWMaxPosition(), vars.second.getSWMinPosition(), vars.second.getSWMaxPosition(), vars.second.getHomePosition(), (int)vars.second.getMaxLoadPct(), (int)vars.second.getMaxTemp());
-                
-                dexhandv2_control::msg::ServoVars sv;
-                sv.servo_id = vars.first;
-                sv.hw_min = vars.second.getHWMinPosition();
-                sv.hw_max = vars.second.getHWMaxPosition();
-                sv.sw_min = vars.second.getSWMinPosition();
-                sv.sw_max = vars.second.getSWMaxPosition();
-                sv.home = vars.second.getHomePosition();
-                sv.max_load_pct = vars.second.getMaxLoadPct();
-                sv.max_temp = vars.second.getMaxTemp();
-                sv_msg.servo_table.push_back(sv);
-            }
-            
-            sv_publisher->publish(sv_msg);
-        }
-    private:
-        string deviceID;
-        rclcpp::Logger logger;
-        rclcpp::Publisher<dexhandv2_control::msg::ServoVarsTable>::SharedPtr sv_publisher;
-};
-
-class FirmwareVersionSubscriber : public IDexhandMessageSubscriber<FirmwareVersionMessage> {
-    public:
-        FirmwareVersionSubscriber(string deviceID, rclcpp::Node* parent) : deviceID(deviceID), logger(parent->get_logger()) {
-            fw_publisher = parent->create_publisher<dexhandv2_control::msg::FirmwareVersion>("dexhandv2/firmware_version", rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local());
-        }
-        ~FirmwareVersionSubscriber() = default;
-
-        void messageReceived(const FirmwareVersionMessage& message) override {
-            RCLCPP_INFO(logger, "Firmware version received for device: %s", deviceID.c_str());
-            RCLCPP_INFO(logger, "Firmware version name: %s", message.getVersionName().c_str());
-            RCLCPP_INFO(logger, "Firmware version: %d.%d", (int)message.getMajorVersion(), (int)message.getMinorVersion());
-
-            dexhandv2_control::msg::FirmwareVersion fw_msg;
-            fw_msg.id = deviceID;
-            fw_msg.version_name = message.getVersionName();
-            fw_msg.major = message.getMajorVersion();
-            fw_msg.minor = message.getMinorVersion();
-            fw_publisher->publish(fw_msg);
-        }
-
-    private:
-        string deviceID;
-        rclcpp::Logger logger;
-        rclcpp::Publisher<dexhandv2_control::msg::FirmwareVersion>::SharedPtr fw_publisher;
-};
 
 
 
