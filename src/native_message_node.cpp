@@ -13,12 +13,9 @@
 #include "dexhandv2_control/msg/servo_target.hpp"
 #include "dexhandv2_control/msg/servo_targets_table.hpp"
 
-#include "dexhandv2_control/srv/reset.hpp"
-
 #include "dexhand_connect.hpp"
 
-#include "firmware_version_subscriber.hpp"
-#include "servo_vars_subscriber.hpp"
+#include "base_node.hpp"
 
 using namespace std::chrono_literals;
 
@@ -116,56 +113,29 @@ class DynamicsSubscriber : public IDexhandMessageSubscriber<ServoDynamicsMessage
 
 
 /// @brief Main class for the node to poll hand events and publish to ROS2 messages
-class DexHandNode : public rclcpp::Node
+class DexHandNode : public DexHandBase
 {
   public:
-    DexHandNode(): Node("dexhandv2_control")
+    DexHandNode(): DexHandBase("dexhandv2_control")
     {
-        // Create service for resetting the hand
-        reset_service = this->create_service<dexhandv2_control::srv::Reset>(
-            "dexhandv2/reset", 
-            std::bind(&DexHandNode::reset_callback, this, std::placeholders::_1, std::placeholders::_2));
-
-        // Create a publisher for discovered hands
-        auto qos_profile = rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local();
-        dh_publisher = this->create_publisher<dexhandv2_control::msg::DiscoveredHands>("dexhandv2/discovered_hands", qos_profile);
-
         // Create subscriber for servo position messages
         st_subscriber = this->create_subscription<dexhandv2_control::msg::ServoTargetsTable>(
             "dexhandv2/servo_targets", rclcpp::QoS(rclcpp::KeepLast(1)).reliable().durability_volatile(),
             std::bind(&DexHandNode::servo_targets_callback, this, std::placeholders::_1));
-    
-
-        // Set up the Dexhand devices
-        enumerate_devices();
 
         // Schedule timer for updating hand devices
         timer_ = this->create_wall_timer(10ms, std::bind(&DexHandNode::timer_callback, this));
     }
 
-    ~DexHandNode() {
-        close_devices();
+    ~DexHandNode() override {
+        
     }
 
   private:
 
-    void reset_callback(const std::shared_ptr<dexhandv2_control::srv::Reset::Request> request,
-                        std::shared_ptr<dexhandv2_control::srv::Reset::Response> response)
-    {
-        response->success = false;
-
-        for (auto& hand : hands) {
-            if (request->id == "all" || request->id == hand->getID()) {
-                RCLCPP_INFO(this->get_logger(), "Resetting hand device %s", hand->getID().c_str());
-                hand->getHand().resetHand();
-                response->success = true;
-            }
-        }
-        
-    }
-
+    
     void servo_targets_callback(const dexhandv2_control::msg::ServoTargetsTable::SharedPtr msg) {
-        for (auto& hand : hands) {
+        for (auto& hand : getHands()) {
             if (msg->id == hand->getID()) {
                 SetServoPositionsCommand cmd;
                 for (const auto& target : msg->servo_table) {
@@ -177,106 +147,36 @@ class DexHandNode : public rclcpp::Node
         }
     }
 
-    class HandInstance {
+    class NMHandInstance : public HandInstance {
 
         public:
-            HandInstance(string deviceID, rclcpp::Node* parent) : hand(), id(deviceID), fullStatus(deviceID, parent), dynamics(deviceID, parent), servoVars(deviceID, parent), firmware(deviceID,parent) {
-                hand.subscribe(&fullStatus);
-                hand.subscribe(&dynamics);
-                hand.subscribe(&servoVars);
-                hand.subscribe(&firmware);
+            NMHandInstance(string deviceID, rclcpp::Node* parent) : HandInstance(deviceID, parent), fullStatus(deviceID, parent), dynamics(deviceID, parent) {
+                getHand().subscribe(&fullStatus);
+                getHand().subscribe(&dynamics);
             }
 
-            ~HandInstance() {
-                hand.unsubscribe(&fullStatus);
-                hand.unsubscribe(&dynamics);
-                hand.unsubscribe(&servoVars);
-                hand.unsubscribe(&firmware);
+            ~NMHandInstance() {
+                getHand().unsubscribe(&fullStatus);
+                getHand().unsubscribe(&dynamics);
             }
-
-            inline DexhandConnect& getHand() { return hand; }
-            inline string getID() { return id; }
 
         private:
 
-            DexhandConnect hand;
-            string id;
             FullServoStatusSubscriber fullStatus;
             DynamicsSubscriber dynamics;
-            ServoVarsSubscriber servoVars;
-            FirmwareVersionSubscriber firmware;
-    };
-
-
-    void enumerate_devices() {
-        DexhandConnect hand;
-        vector<DexhandConnect::DexhandUSBDevice> devices = hand.enumerateDevices();
-        if (devices.size() > 0){
-            RCLCPP_INFO(this->get_logger(), "Found %ld Dexhand devices", (devices.size()));
-
-            // Construct a message to publish the discovered hands
-            dexhandv2_control::msg::DiscoveredHands discoHands;
             
-            for (auto& device : devices) {
-                if (hand.openSerial(device.port)) {
-                    RCLCPP_INFO(this->get_logger(), "Manufacturer: %s Product: %s Serial: %s", device.  manufacturer.c_str(), device.product.c_str(), device.serial.c_str());
-                    RCLCPP_INFO(this->get_logger(), "Opened serial port %s for device %s", device.port.c_str(), device.serial.c_str());
-
-                    // Create a new hand instance and open the serial port
-                    hands.push_back(std::make_shared<HandInstance>(device.serial, this));
-                    HandInstance* hi = hands.back().get();
-                    hi->getHand().openSerial(device.port);
-                    
-                    // Add it to the discovered hands message
-                    dexhandv2_control::msg::HardwareDescription hd;
-                    hd.manufacturer = device.manufacturer;
-                    hd.port = device.port;
-                    hd.product = device.product;
-                    hd.id = device.serial;
-                    discoHands.hands.push_back(hd);
-                    
-                }
-                else {
-                    RCLCPP_ERROR(this->get_logger(), "Failed to open serial port %s for device %s", device.port.c_str(), device.serial.c_str());
-                }
-            }
-
-            // Publish the discovered hands message as a latched message
-            dh_publisher->publish(discoHands);
-
-
-        }
-        else {
-            RCLCPP_ERROR(this->get_logger(), "No Dexhand devices found");
-        }
-    }
-
-    void close_devices() {
-
-        RCLCPP_INFO(this->get_logger(), "Shutting down hand devices.");
-        for (auto& hand : hands) {
-            hand->getHand().closeSerial();
-        }
-        hands.clear();
-    }
-
+    };
 
     void timer_callback()
     {
         // Update all the hands
-        for (auto& hand : hands) {
+        for (auto& hand : getHands()) {
             hand->getHand().update();
         }
     }
 
-    std::vector<shared_ptr<HandInstance>> hands;
     rclcpp::TimerBase::SharedPtr timer_;
-
-    rclcpp::Publisher<dexhandv2_control::msg::DiscoveredHands>::SharedPtr dh_publisher;
     rclcpp::Subscription<dexhandv2_control::msg::ServoTargetsTable>::SharedPtr st_subscriber;
-
-    rclcpp::Service<dexhandv2_control::srv::Reset>::SharedPtr reset_service;
-
 };
 
 int main(int argc, char * argv[])
